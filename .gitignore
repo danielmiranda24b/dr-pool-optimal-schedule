@@ -1,0 +1,5 @@
+cache/
+optimized_routes_*.xlsx
+__pycache__/
+SCHEDULE.xlsx
+CONTACTS.xls*
