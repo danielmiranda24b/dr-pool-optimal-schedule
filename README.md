@@ -4,7 +4,12 @@
     pip install -r requirements.txt
 
 ## Every week
-    python poolroute.py SCHEDULE.xlsx CONTACTS.xls --depot "your warehouse/home address"
+    python poolroute.py
+
+Drop the new weekly schedule (any name starting with `SCHEDULE`, e.g. `SCHEDULE_10.11.2026_-10.17.2026.xlsx`)
+and the contacts file (any name starting with `CONTACTS`) in this folder. The newest of each is used automatically.
+The depot defaults to 2850 Glades Circle, Bay #4, Weston, FL 33327; override with `--depot "address"` or `--depot none`.
+You can still pass paths explicitly: `python poolroute.py SCHED.xlsx CONTACTS.xls`.
 
 Output: `optimized_routes_YYYYMMDD.xlsx`
 - **Summary**: per tech/day: current miles & drive time vs. optimized (both versions)
@@ -13,7 +18,7 @@ Output: `optimized_routes_YYYYMMDD.xlsx`
 - **Check These**: stops with no address, or fuzzy name matches to verify
 
 Options: `--service-min 25` (minutes per pool), `--only MIKA`, `--day TUE`, `--out file.xlsx`.
-Omit `--depot` and each day is optimized with a free start/end point.
+`--depot none` optimizes each day with a free start/end point.
 
 ## Notes
 - Needs internet the first time (Census + OpenStreetMap geocoding, OSRM road distances). Addresses are cached in `cache/`, so later weeks only look up NEW addresses.

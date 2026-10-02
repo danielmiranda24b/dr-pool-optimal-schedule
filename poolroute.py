@@ -11,16 +11,28 @@ poolroute - weekly pool-route optimizer. Zero AI tokens: just run it.
 4. Gets real road distance + drive time between stops (OSRM). Falls back to straight-line x1.35 if offline.
 5. Re-orders each tech's day twice: SHORTEST MILES and FASTEST TIME. Writes one Excel file.
 """
-import argparse, io, itertools, json, math, os, random, re, sys, time, urllib.parse, urllib.request
+import argparse, glob, io, itertools, json, math, os, random, re, sys, time, urllib.parse, urllib.request
 import pandas as pd
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, "cache"); os.makedirs(CACHE, exist_ok=True)
 UA = {"User-Agent": "poolroute/1.0 (route planning script)"}
 BBOX = (25.3, 26.9, -80.9, -79.9)   # South Florida sanity box (lat_min, lat_max, lon_min, lon_max)
+DEFAULT_DEPOT = "2850 Glades Circle, Bay #4, Weston, FL 33327"
 DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT"]
 
 # ---------------------------------------------------------------- inputs
+def find_latest(prefix, exts):
+    """Newest file (by modified time) named PREFIX*.ext in the current folder or next to this script.
+    Lets the weekly file keep changing its name, e.g. SCHEDULE_10.11.2026_-10.17.2026.xlsx."""
+    found = {}
+    for folder in (os.getcwd(), HERE):
+        for f in os.listdir(folder):
+            if f.lower().startswith(prefix.lower()) and f.lower().endswith(exts) and not f.startswith(("~$", "optimized_")):
+                p = os.path.join(folder, f); found[os.path.abspath(p)] = os.path.getmtime(p)
+    if not found: sys.exit(f"No {prefix}*{exts[0]} file found in {os.getcwd()} - put it there or pass its path.")
+    return max(found, key=found.get)
+
 def load_schedule(path):
     import openpyxl
     ws = openpyxl.load_workbook(path, data_only=True).worksheets[0]
@@ -262,13 +274,18 @@ def evaluate(order, M, S, depot):
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("schedule"); ap.add_argument("contacts")
-    ap.add_argument("--depot", help='start/end address, e.g. "1234 Main St, Weston FL". Omit = free start/end')
+    ap.add_argument("schedule", nargs="?", help="schedule workbook; omit to use the newest SCHEDULE*.xlsx in this folder")
+    ap.add_argument("contacts", nargs="?", help="contacts workbook; omit to use the newest CONTACTS*.xls/.xlsx in this folder")
+    ap.add_argument("--depot", default=DEFAULT_DEPOT, help=f'start/end address (default: "{DEFAULT_DEPOT}"). Use --depot none for a free start/end')
     ap.add_argument("--service-min", type=float, default=25, help="minutes spent at each pool (default 25)")
     ap.add_argument("--only", help="only this tech (e.g. MIKA)"); ap.add_argument("--day", help="only this day (MON..SAT)")
     ap.add_argument("--out", default=None); ap.add_argument("--dry-run", action="store_true", help="TEST ONLY: fake coordinates")
     a = ap.parse_args()
 
+    if a.depot and a.depot.lower() == "none": a.depot = None
+    a.schedule = a.schedule or find_latest("SCHEDULE", (".xlsx", ".xlsm"))
+    a.contacts = a.contacts or find_latest("CONTACTS", (".xls", ".xlsx"))
+    print("schedule:", os.path.basename(a.schedule), "| contacts:", os.path.basename(a.contacts), "| depot:", a.depot or "none")
     sched = load_schedule(a.schedule); contacts = load_contacts(a.contacts)
     if a.only: sched = sched[sched.tech.str.upper().str.contains(a.only.upper())]
     if a.day: sched = sched[sched.day == a.day.upper()]
@@ -287,7 +304,9 @@ def main():
     depot_pt = None
     if a.depot:
         d = m.iloc[[0]].copy(); d["gkey"] = a.depot.lower(); d["gstreet"] = a.depot; d["gcity"] = ""; d["gfallback"] = a.depot
-        depot_pt = geocode_all(d, a.dry_run).iloc[0]; depot_pt = (depot_pt.lat, depot_pt.lon)
+        depot_pt = geocode_all(d, a.dry_run).iloc[0]
+        if pd.isna(depot_pt.lat): sys.exit("Could not locate the depot address - check it or your internet connection.")
+        depot_pt = (depot_pt.lat, depot_pt.lon)
 
     results = {"MILES": [], "TIME": []}; summary = []; check = []
     for (tech, day), g in m.groupby(["tech", "day"], sort=False):
